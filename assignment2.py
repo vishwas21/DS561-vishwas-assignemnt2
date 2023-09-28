@@ -42,8 +42,7 @@ def parseFileHTML(fileName, fileContent):
                 'links': []
             }
         
-        if hrefLink not in pageGraph[fileName]['links']:
-            pageGraph[hrefLink]['incomingLinks'] = pageGraph[hrefLink]['incomingLinks'] + 1
+        pageGraph[hrefLink]['incomingLinks'] = pageGraph[hrefLink]['incomingLinks'] + 1
 
 def saveToFile():
     openFile = open("data.json", "w")
