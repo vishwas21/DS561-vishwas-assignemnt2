@@ -13,7 +13,7 @@ import json
 @functions_framework.http
 def ds561_fileRequest_http(request: flask.Request) -> flask.typing.ResponseReturnValue:
 
-    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "/Users/vishwasb/personal/masters/Fall2023/DS561/Assignments/DS561-vishwas-assignments/googleCredentials/ds561-visb-assignment-292b3b8eb57e.json"
+    # os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "/Users/vishwasb/personal/masters/Fall2023/DS561/Assignments/DS561-vishwas-assignments/googleCredentials/ds561-visb-assignment-292b3b8eb57e.json"
 
     # Check if the request is from a prohbitted country, if yes then send a 404 response and add a message to the publisher with the details
     if(request.headers.get("X-country") in ["North Korea", "Iran", "Cuba", "Myanmar", "Iraq", "Libya", "Sudan", "Zimbabwe", "Syria"]):
@@ -38,12 +38,11 @@ def ds561_fileRequest_http(request: flask.Request) -> flask.typing.ResponseRetur
     }
 
     if request.method == "GET":
-        request_args = request.args
 
         # Connect to google storage if not already connected
         storageClient = connectToGoogle()
         storageBucket, filesInBucket = connectToStorageBucketAndRead(storageClient, "cs561-assignment2-storage-bucket")
-        fileName = "files/" + request_args["file"]
+        fileName = "files/" + request.path.split("/")[-1]
 
         # Get the file name and check if the file is present in the bucket
         if(not checkFileIfExists(filesInBucket, fileName)):
@@ -54,6 +53,10 @@ def ds561_fileRequest_http(request: flask.Request) -> flask.typing.ResponseRetur
             return ("File Not Found", 404)
 
         # If present, retreive the file, read it and return the contents of the file with a 200 code
+        currentLog["severity"] = "SUCCESS"
+        currentLog["message"] = "File Found and returned Successfully"
+        currentLog["statusCode"] = 200
+        logging.info(currentLog)
         return(readFileFromStorage(storageBucket, fileName), 200)
     else:
         currentLog["severity"] = "INTERNAL SERVER ERROR"
