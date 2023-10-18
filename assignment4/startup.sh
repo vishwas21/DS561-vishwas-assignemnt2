@@ -6,6 +6,7 @@ sudo apt-get install git -y
 sudo apt-get install python3-venv -y
 cd /home/vishwasb
 rm -r DS561-vishwas-assignments
+rm -r assignment4
 git clone https://github.com/vishwas21/DS561-vishwas-assignments.git
 cd DS561-vishwas-assignments
 pwd

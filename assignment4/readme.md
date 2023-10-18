@@ -13,6 +13,8 @@ gcloud compute addresses describe visb-a4-ip-address
 
 gcloud compute instances create assignment4-http-vm --address=34.27.2.159 --zone=us-central1-a
 
+// 35.193.230.148
+
 gcloud compute instances describe assignment4-http-vm
 
 gcloud compute instances delete-access-config assignment4-http-vm \
