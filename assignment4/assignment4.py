@@ -35,7 +35,7 @@ except OSError:
 @app.route('/<fileName>', methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS", "PUT"])
 def getFileFromGcp(fileName):
 
-    # os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "./googleCredentials.json"
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "./googleCredentials.json"
 
     # Check if the request is from a prohbitted country, if yes then send a 404 response and add a message to the publisher with the details
     if(request.headers.get("X-country") in ["North Korea", "Iran", "Cuba", "Myanmar", "Iraq", "Libya", "Sudan", "Zimbabwe", "Syria"]):
