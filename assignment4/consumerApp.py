@@ -4,7 +4,7 @@ from google.cloud import pubsub_v1
 from concurrent.futures import TimeoutError
 import time
 
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "./googleCredentials.json"
+# os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "./googleCredentials.json"
 
 PUB_SUB_TOPIC = "ds561-assignment3"
 PUB_SUB_PROJECT = "ds561-visb-assignment"
