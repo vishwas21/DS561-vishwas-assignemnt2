@@ -1,5 +1,5 @@
 import os
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "./googleCredentials.json"
+# os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "./googleCredentials.json"
 
 from flask import Flask, request
 from dotenv import load_dotenv
