@@ -59,11 +59,23 @@ def insertRequestDetails(request):
     timeOfRequest = datetime.now(timezone.utc)
     requestedFile = "files/" + request.path.split("/")[-1]
 
-    insertStmt = sa.text(f"""INSERT INTO request_details (country, client_ip, gender, age, income, is_banned, time_of_request, requested_file) VALUES('{request.headers.get("X-country")}', '{request.headers.get("X-client-ip")}', '{request.headers.get("X-gender")}', {request.headers.get("X-age")}, {request.headers.get("X-income")}, {isBanned}, '{timeOfRequest}', '{requestedFile}');""")
+    insertStmt = sa.text(f"""INSERT INTO request_details (country, client_ip, gender, age, income, is_banned, time_of_request, requested_file) VALUES('{request.headers.get("X-country")}', '{request.headers.get("X-client-ip")}', '{request.headers.get("X-gender")}', {request.headers.get("X-age")}, {request.headers.get("X-income")}, {isBanned}, '{timeOfRequest}', '{requestedFile}') RETURNING request_id;""")
+
+    res = ""
 
     with pool.connect() as dbConn:
         res = dbConn.execute(insertStmt)
         dbConn.commit()
+    
+    return (res.fetchone()).request_id
+
+def insertErrorDetails(request_id, errorCode):
+    insertStmt = sa.text(f"""INSERT INTO error_details (request_id, error_code) VALUES({request_id}, {errorCode});""")
+
+    with pool.connect() as dbConn:
+        dbConn.execute(insertStmt)
+        dbConn.commit()
+    return
 
 # initialize Python Connector object
 def connectToDb():
@@ -99,23 +111,12 @@ def connectToDb():
 
 connectToDb()
 
-@app.route("/testdb", methods=["GET"])
-def testRoute():
-    with pool.connect() as db_conn:
-        print("Connection Successful")
-        results = db_conn.execute(sa.text("SELECT * FROM request_details;"))
-
-        for res in results:
-            print(res)
-    
-    return ("All good", 202)
-
 # a simple page that says hello
 @app.route('/<fileName>', methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS", "PUT"])
 def getFileFromGcp(fileName):
 
     print(fileName)
-    insertRequestDetails(request)
+    request_id = insertRequestDetails(request)
 
     # Check if the request is from a prohbitted country, if yes then send a 404 response and add a message to the publisher with the details
     if(request.headers.get("X-country") in ["North Korea", "Iran", "Cuba", "Myanmar", "Iraq", "Libya", "Sudan", "Zimbabwe", "Syria"]):
@@ -127,6 +128,7 @@ def getFileFromGcp(fileName):
                     "data": str(request.data),
                     "message": "Request from an unauthorized country"}
         pushMessagePubSub(pubClient, payload)
+        insertErrorDetails(request_id, 400)
         return ("Permission Denied - Unauthorized Country", 400)
     
     loggingClient = connectToCloudLogging()
@@ -141,36 +143,36 @@ def getFileFromGcp(fileName):
         "statusCode": 000
     }
 
-    return ("Not Implemented yet", 200)
+    if request.method == "GET":
 
-    # if request.method == "GET":
+        # Connect to google storage if not already connected
+        storageClient = connectToGoogle()
+        storageBucket, filesInBucket = connectToStorageBucketAndRead(storageClient, "cs561-assignment2-storage-bucket")
+        fileName = "files/" + request.path.split("/")[-1]
 
-    #     # Connect to google storage if not already connected
-    #     storageClient = connectToGoogle()
-    #     storageBucket, filesInBucket = connectToStorageBucketAndRead(storageClient, "cs561-assignment2-storage-bucket")
-    #     fileName = "files/" + request.path.split("/")[-1]
+        # Get the file name and check if the file is present in the bucket
+        if(not checkFileIfExists(filesInBucket, fileName)):
+            currentLog["severity"] = "ERROR"
+            currentLog["message"] = "User tried to search for non existant file: " + fileName
+            currentLog["statusCode"] = 404
+            print(currentLog)
+            logging.warning(currentLog)
+            insertErrorDetails(request_id, 404)
+            return ("File Not Found", 404)
 
-    #     # Get the file name and check if the file is present in the bucket
-    #     if(not checkFileIfExists(filesInBucket, fileName)):
-    #         currentLog["severity"] = "ERROR"
-    #         currentLog["message"] = "User tried to search for non existant file: " + fileName
-    #         currentLog["statusCode"] = 404
-    #         print(currentLog)
-    #         logging.warning(currentLog)
-    #         return ("File Not Found", 404)
-
-    #     # If present, retreive the file, read it and return the contents of the file with a 200 code
-    #     currentLog["severity"] = "SUCCESS"
-    #     currentLog["message"] = "File Found and returned Successfully"
-    #     currentLog["statusCode"] = 200
-    #     logging.info(currentLog)
-    #     return(readFileFromStorage(storageBucket, fileName), 200)
-    # else:
-    #     currentLog["severity"] = "INTERNAL SERVER ERROR"
-    #     currentLog["message"] = "Not Implemented method call : " + request.method
-    #     currentLog["statusCode"] = 501
-    #     logging.warning(currentLog)
-    #     return ("Not Implemented yet", 501)
+        # If present, retreive the file, read it and return the contents of the file with a 200 code
+        currentLog["severity"] = "SUCCESS"
+        currentLog["message"] = "File Found and returned Successfully"
+        currentLog["statusCode"] = 200
+        logging.info(currentLog)
+        return(readFileFromStorage(storageBucket, fileName), 200)
+    else:
+        currentLog["severity"] = "INTERNAL SERVER ERROR"
+        currentLog["message"] = "Not Implemented method call : " + request.method
+        currentLog["statusCode"] = 501
+        logging.warning(currentLog)
+        insertErrorDetails(request_id, 501)
+        return ("Not Implemented yet", 501)
     
 def connectToGoogle():
     storageClient = storage.Client.create_anonymous_client()

@@ -32,6 +32,7 @@ ExecStart=/home/vishwasb/assignment4/env/bin/gunicorn --workers 3 --bind 0.0.0.0
 WantedBy=multi-user.target" > assignment4.service
 sudo chown root:root assignment4.service
 sudo cp assignment4.service /etc/systemd/system/assignment4.service
+sudo chown vishwasb:vishwasb /home/vishwasb/assignment4
 sudo systemctl stop assignment4
 sudo systemctl daemon-reload
 sudo systemctl start assignment4
