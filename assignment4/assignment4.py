@@ -64,8 +64,11 @@ def insertRequestDetails(request):
     res = ""
 
     with pool.connect() as dbConn:
-        res = dbConn.execute(insertStmt)
-        dbConn.commit()
+        try : 
+            res = dbConn.execute(insertStmt)
+            dbConn.commit() 
+        except:
+            print("An exception occurred")
     
     return (res.fetchone()).request_id
 
@@ -73,8 +76,11 @@ def insertErrorDetails(request_id, errorCode):
     insertStmt = sa.text(f"""INSERT INTO error_details (request_id, error_code) VALUES({request_id}, {errorCode});""")
 
     with pool.connect() as dbConn:
-        dbConn.execute(insertStmt)
-        dbConn.commit()
+        try: 
+            dbConn.execute(insertStmt)
+            dbConn.commit()
+        except:
+            print("An exception occurred")
     return
 
 # initialize Python Connector object
