@@ -59,7 +59,7 @@ def insertRequestDetails(request):
     timeOfRequest = datetime.now(timezone.utc)
     requestedFile = "files/" + request.path.split("/")[-1]
 
-    insertStmt = sa.text(f"""INSERT INTO request_details (country, client_ip, gender, age, income, is_banned, time_of_request, requested_file) VALUES('{request.headers.get("X-country")}', '{request.headers.get("X-client-ip")}', '{request.headers.get("X-gender")}', {request.headers.get("X-age")}, {request.headers.get("X-income")}, {isBanned}, '{timeOfRequest}', '{requestedFile}') RETURNING request_id;""")
+    insertStmt = sa.text(f"""INSERT INTO request_details (country, client_ip, gender, age, income, is_banned, time_of_request, requested_file) VALUES('{request.headers.get("X-country")}', '{request.headers.get("X-client-ip")}', '{request.headers.get("X-gender")}', '{request.headers.get("X-age")}', '{request.headers.get("X-income")}', {isBanned}, '{timeOfRequest}', '{requestedFile}') RETURNING request_id;""")
 
     res = ""
 
