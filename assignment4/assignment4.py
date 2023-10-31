@@ -121,7 +121,6 @@ connectToDb()
 @app.route('/<fileName>', methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS", "PUT"])
 def getFileFromGcp(fileName):
 
-    print(fileName)
     request_id = insertRequestDetails(request)
 
     # Check if the request is from a prohbitted country, if yes then send a 404 response and add a message to the publisher with the details
@@ -219,8 +218,7 @@ def pushMessagePubSub(pubClient, payload):
 
     topicPath = pubClient.topic_path(PUB_SUB_PROJECT, PUB_SUB_TOPIC)        
     jsonData = json.dumps(payload).encode("utf-8")           
-    future = pubClient.publish(topicPath, data=jsonData)
-    print("Pushed message to topic.")   
+    future = pubClient.publish(topicPath, data=jsonData) 
     return
 
 if __name__ == "__main__":
