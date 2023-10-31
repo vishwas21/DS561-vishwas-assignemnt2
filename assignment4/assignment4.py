@@ -7,16 +7,13 @@ from datetime import datetime, timezone
 
 from google.cloud import storage as storage
 from google.cloud import pubsub_v1
-from google.cloud.sql.connector import Connector
 from google.cloud import secretmanager
 
 import sqlalchemy as sa
-from sqlalchemy import insert
 import google.cloud.logging
 import os
 import json
 import ssl
-import time
 
 load_dotenv("./.env")
 
@@ -26,17 +23,7 @@ os.environ["DB_NAME"] = "ds561-db"
 
 # def create_app(test_config=None):
 #     # create and configure the app
-app = Flask(__name__, instance_relative_config=True)
-app.config.from_mapping(
-    SECRET_KEY='dev',
-    DATABASE=os.path.join(app.instance_path, 'assignment4.sqlite'),
-)
-
-# ensure the instance folder exists
-try:
-    os.makedirs(app.instance_path)
-except OSError:
-    pass
+app = Flask(__name__)
 
 pool = ""
 
@@ -222,4 +209,4 @@ def pushMessagePubSub(pubClient, payload):
     return
 
 if __name__ == "__main__":
-    app.run("0.0.0.0", "8080")
+    app.run(host="0.0.0.0", port="8080")
