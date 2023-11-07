@@ -109,7 +109,7 @@ def main():
     data_frame['ip'] = data_frame['ip'].astype(int).values.reshape(-1, 1)
     data_frame['gender'] = data_frame['gender'].astype(int).values.reshape(-1, 1)
 
-    X = data_frame[['ip','age', 'gender']]
+    X = data_frame[['ip', 'age', 'gender']]
     y = data_frame['income']
 
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=40)
