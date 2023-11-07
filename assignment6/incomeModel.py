@@ -3,6 +3,7 @@ import sqlalchemy
 import os
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "./googleCredentials.json"
 
+
 import pg8000
 import socket, struct
 import sqlalchemy
@@ -97,22 +98,22 @@ def main():
     sqlserver = MySqlServer()
     sqlserver.pool = sqlserver.connect_with_connector()
 
-    data_frame = sqlserver.execute_query("SELECT * FROM accesslogs")
+    df = sqlserver.execute_query("SELECT * FROM accesslogs")
 
     income_mapping = {'0-10k': 5000, '10k-20k': 15000, '20k-40k': 30000, '40k-60k': 50000, '60k-100k': 80000, '100k-150k': 125000, '150k-250k': 200000, '250k+': 250000}
 
     age_mapping = {'0-16': 8, '17-25': 21, '26-35': 30, '36-45': 41, '46-55': 50, '56-65': 61, '66-75': 70, '76+': 76}
 
-    data_frame['income'] = data_frame['income'].map(income_mapping).values.reshape(-1, 1)
-    data_frame['age'] = data_frame['age'].map(age_mapping).values.reshape(-1, 1)
+    df['income'] = df['income'].map(income_mapping).values.reshape(-1, 1)
+    df['age'] = df['age'].map(age_mapping).values.reshape(-1, 1)
 
-    data_frame['ip'] = data_frame['ip'].astype(int).values.reshape(-1, 1)
-    data_frame['gender'] = data_frame['gender'].astype(int).values.reshape(-1, 1)
+    df['ip'] = df['ip'].astype(int).values.reshape(-1, 1)
+    df['gender'] = df['gender'].astype(int).values.reshape(-1, 1)
 
-    X = data_frame[['ip', 'age', 'gender']]
-    y = data_frame['income']
+    X = df[['ip','age', 'gender']]
+    y = df['income']
 
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=40)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.1, random_state=40)
 
     income_model = RandomForestClassifier(n_estimators=90, random_state=40)
     income_model.fit(X_train, y_train)
