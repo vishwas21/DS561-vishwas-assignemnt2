@@ -1,10 +1,12 @@
 import apache_beam as beam
+import re
 
 from apache_beam.options.pipeline_options import PipelineOptions, GoogleCloudOptions
 
 class ProcessHTMLFiles(beam.DoFn):
   def process(self, element):
     file_name, content = element
+    file_name = (re.findall("\/([a-zA-Z0-9]*.{1}.html)", file_name))[0]
     from bs4 import BeautifulSoup
     soup = BeautifulSoup(content, 'html.parser')
     listOfAnchorTags = soup.find_all('a')

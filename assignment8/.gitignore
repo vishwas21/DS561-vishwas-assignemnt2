@@ -1,0 +1,6 @@
+env/
+__pycache__
+googleCredentials.json
+server-ca.pem
+client-key.pem
+client-cert.pem
