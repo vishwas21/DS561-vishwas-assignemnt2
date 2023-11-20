@@ -1,7 +1,7 @@
 import os
 # os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "./googleCredentials.json"
 
-from flask import Flask, make_response, render_template, request
+from flask import Flask, make_response, request
 from dotenv import load_dotenv
 from datetime import datetime, timezone
 
@@ -79,13 +79,16 @@ def getFileFromGcp(fileName):
             return ("File Not Found", 404)
 
         # If present, retreive the file, read it and return the contents of the file with a 200 code
-        currentLog["severity"] = "SUCCESS"
-        currentLog["message"] = "File Found and returned Successfully"
-        currentLog["statusCode"] = 200
-        logging.info(currentLog)
-        response = make_response(readFileFromStorage(storageBucket, fileName), 200)
-        response.headers['X-response-vm-zone'] = os.environ['VMZONE']
-        return response
+        try:
+            currentLog["severity"] = "SUCCESS"
+            currentLog["message"] = "File Found and returned Successfully"
+            currentLog["statusCode"] = 200
+            logging.info(currentLog)
+            response = make_response(readFileFromStorage(storageBucket, fileName), 200)
+            response.headers['X-response-vm-zone'] = os.environ['VMZONE']
+            return response
+        except Exception as e:
+            return (str(e), 500)
     else:
         currentLog["severity"] = "INTERNAL SERVER ERROR"
         currentLog["message"] = "Not Implemented method call : " + request.method
