@@ -10,6 +10,8 @@ import os
 import ssl
 from datetime import date
 
+responseVm = dict()
+
 
 list_of_countries = [ 'Afghanistan', 'Albania', 'Algeria', 'Andorra',
                       'Angola', 'Antigua and Barbuda', 'Argentina', 'Armenia',
@@ -58,6 +60,13 @@ list_of_incomes = ['0-10k', '10k-20k', '20k-40k', '40k-60k', '60k-100k', '100k-1
 
 cidr_dict = {}
 used_cidrs = []
+
+def updateCount(key):
+    if key in responseVm:
+        responseVm[key] += 1
+    else:
+        responseVm[key] = 1
+    
 
 def fix_certs():
     ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS)
@@ -144,15 +153,17 @@ def make_request(domain, port, country, ip, filename, use_ssl, ssl_context, foll
     data = res.read()
     if verbose:
         print(res.status, res.reason)
-        print(res.msg)
-        print(data)
+        # print(res.msg)
+        # print(data)
+        print(res.getheader('X-response-vm-zone'))
+        updateCount(res.getheader('X-response-vm-zone'))
     if follow:
         location_header = res.getheader('location')
         if location_header is not None:
             filename = urljoin(filename, location_header)
             make_request(domain, port, country, ip, filename, use_ssl, ssl_context, follow, verbose)
     conn.close()
-                 
+
         
 def main():
     ssl_context = fix_certs()
@@ -187,6 +198,7 @@ def main():
         if args.ssl and args.port==80:
             args.port=443
         make_request(args.domain, args.port, country, ip, filename, args.ssl, ssl_context, args.follow, args.verbose)
+    print("Response Statistics: ", responseVm)
 
 if __name__ == "__main__":
     main()

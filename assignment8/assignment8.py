@@ -38,6 +38,8 @@ def createFileFromSM(fileName, secret_id, version_id):
 @app.route('/<fileName>', methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS", "PUT"])
 def getFileFromGcp(fileName):
 
+    response = ""
+
     # Check if the request is from a prohbitted country, if yes then send a 404 response and add a message to the publisher with the details
     if(request.headers.get("X-country") in ["North Korea", "Iran", "Cuba", "Myanmar", "Iraq", "Libya", "Sudan", "Zimbabwe", "Syria"]):
         # Push the message to a Pub/Sub Model topic
@@ -48,7 +50,9 @@ def getFileFromGcp(fileName):
                     "data": str(request.data),
                     "message": "Request from an unauthorized country"}
         pushMessagePubSub(pubClient, payload)
-        return ("Permission Denied - Unauthorized Country", 400)
+        response = make_response("Permission Denied - Unauthorized Country", 400)
+        response.headers['X-response-vm-zone'] = os.environ['VMZONE']
+        return response
     
     loggingClient = connectToCloudLogging()
     import logging
@@ -76,7 +80,9 @@ def getFileFromGcp(fileName):
             currentLog["statusCode"] = 404
             print(currentLog)
             logging.warning(currentLog)
-            return ("File Not Found", 404)
+            response =  make_response("File Not Found", 404)
+            response.headers['X-response-vm-zone'] = os.environ['VMZONE']
+            return response
 
         # If present, retreive the file, read it and return the contents of the file with a 200 code
         try:
@@ -94,7 +100,9 @@ def getFileFromGcp(fileName):
         currentLog["message"] = "Not Implemented method call : " + request.method
         currentLog["statusCode"] = 501
         logging.warning(currentLog)
-        return ("Not Implemented yet", 501)
+        response = make_response("Not Implemented yet", 501)
+        response.headers['X-response-vm-zone'] = os.environ['VMZONE']
+        return response
     
 def connectToGoogle():
     storageClient = storage.Client.create_anonymous_client()
