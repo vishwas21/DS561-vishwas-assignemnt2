@@ -83,9 +83,9 @@ def getFileFromGcp(fileName):
         currentLog["message"] = "File Found and returned Successfully"
         currentLog["statusCode"] = 200
         logging.info(currentLog)
-        response = make_response(render_template(readFileFromStorage(storageBucket, fileName)))
-        response.headers['X-response-vm-zone'] = os.environ['VMZONE'] or "us-central1-a"
-        return(readFileFromStorage(storageBucket, fileName), 200)
+        response = make_response(readFileFromStorage(storageBucket, fileName), 200)
+        response.headers['X-response-vm-zone'] = os.environ['VMZONE']
+        return response
     else:
         currentLog["severity"] = "INTERNAL SERVER ERROR"
         currentLog["message"] = "Not Implemented method call : " + request.method
