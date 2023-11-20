@@ -26,7 +26,7 @@ User=vishwasb
 Group=www-data
 WorkingDirectory=/home/vishwasb/assignment8
 Environment="PATH=/home/vishwasb/assignment8/env/bin"
-ExecStart=/home/vishwasb/assignment8/env/bin/gunicorn --workers 3 --bind 0.0.0.0:8080 wsgi:app
+ExecStart=/home/vishwasb/assignment8/env/bin/gunicorn --workers 3 --bind 0.0.0.0:8085 wsgi:app
 
 [Install]
 WantedBy=multi-user.target" > assignment8.service
@@ -36,6 +36,6 @@ sudo chown vishwasb:vishwasb /home/vishwasb/assignment8
 sudo systemctl stop assignment8
 sudo systemctl daemon-reload
 sudo systemctl start assignment8
-systemctl daemon-reload
+sudo systemctl daemon-reload
 sudo systemctl restart assignment8
 sudo systemctl enable assignment8

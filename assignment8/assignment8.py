@@ -1,7 +1,7 @@
 import os
 # os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "./googleCredentials.json"
 
-from flask import Flask, request
+from flask import Flask, make_response, render_template, request
 from dotenv import load_dotenv
 from datetime import datetime, timezone
 
@@ -83,6 +83,8 @@ def getFileFromGcp(fileName):
         currentLog["message"] = "File Found and returned Successfully"
         currentLog["statusCode"] = 200
         logging.info(currentLog)
+        response = make_response(render_template(readFileFromStorage(storageBucket, fileName)))
+        response.headers['X-response-vm-zone'] = os.environ['VMZONE'] or "us-central1-a"
         return(readFileFromStorage(storageBucket, fileName), 200)
     else:
         currentLog["severity"] = "INTERNAL SERVER ERROR"
