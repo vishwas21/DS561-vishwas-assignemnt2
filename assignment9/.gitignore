@@ -5,4 +5,5 @@ server-ca.pem
 client-key.pem
 client-cert.pem
 
-assignment8Document.docx
+assignment9Document.docx
+*.docx
