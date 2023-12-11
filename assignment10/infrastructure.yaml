@@ -1,0 +1,236 @@
+resources:
+    - name: ds561-storage-bucket-a10-visb
+      type: storage.v1.bucket
+      properties:
+          location: us-central1
+
+    - name: service-account
+      type: iam.v1.serviceAccount
+      properties:
+          accountId: ds561-visb-aten-sa
+          displayName: ds561-visb-aten-sa
+
+    - name: service-account-policy
+      type: gcp-types/cloudresourcemanager-v1:virtual.projects.iamMemberBinding
+      properties:
+          accountId: ds561-visb-aten-sa
+      accessControl:
+          gcpIamPolicy:
+              bindings:
+                  - role: roles/cloudsql.admin
+                    members:
+                        - serviceAccount:$(ref.service-account.email)
+                  - role: roles/cloudsql.client
+                    members:
+                        - serviceAccount:$(ref.service-account.email)
+                  - role: roles/compute.instanceAdmin.v1
+                    members:
+                        - serviceAccount:$(ref.service-account.email)
+                  - role: roles/compute.networkAdmin
+                    members:
+                        - serviceAccount:$(ref.service-account.email)
+                  - role: roles/compute.securityAdmin
+                    members:
+                        - serviceAccount:$(ref.service-account.email)
+                  - role: roles/dataflow.admin
+                    members:
+                        - serviceAccount:$(ref.service-account.email)
+                  - role: roles/dataflow.worker
+                    members:
+                        - serviceAccount:$(ref.service-account.email)
+                  - role: roles/logging.admin
+                    members:
+                        - serviceAccount:$(ref.service-account.email)
+                  - role: roles/pubsub.publisher
+                    members:
+                        - serviceAccount:$(ref.service-account.email)
+                  - role: roles/pubsub.subscriber
+                    members:
+                        - serviceAccount:$(ref.service-account.email)
+                  - role: roles/pubsub.viewer
+                    members:
+                        - serviceAccount:$(ref.service-account.email)
+                  - role: roles/secretmanager.admin
+                    members:
+                        - serviceAccount:$(ref.service-account.email)
+                  - role: roles/iam.serviceAccountUser
+                    members:
+                        - serviceAccount:$(ref.service-account.email)
+                  - role: roles/storage.admin
+                    members:
+                        - serviceAccount:$(ref.service-account.email)
+                  - role: roles/storage.objectAdmin
+                    members:
+                        - serviceAccount:$(ref.service-account.email)
+                  - role: roles/storage.objectViewer
+                    members:
+                        - serviceAccount:$(ref.service-account.email)
+      metadata:
+          dependsOn:
+              - service-account
+
+    # Static IP address
+    - name: aten-static-ip-address
+      type: compute.v1.address
+      properties:
+          name: aten-static-ip-address
+          region: us-central1
+
+    # VM with startup script
+    - name: vm
+      type: compute.v1.instance
+      properties:
+          zone: us-central1-f
+          machineType: https://www.googleapis.com/compute/v1/projects/ds561-visb-assignment/zones/us-central1-f/machineTypes/n1-standard-1
+          disks:
+              - deviceName: boot
+                type: PERSISTENT
+                boot: true
+                autoDelete: true
+                initializeParams:
+                    sourceImage: projects/debian-cloud/global/images/family/debian-10
+          networkInterfaces:
+              - network: https://www.googleapis.com/compute/v1/projects/ds561-visb-assignment/global/networks/default
+                accessConfigs:
+                    - name: External NAT
+                      type: ONE_TO_ONE_NAT
+                      natIP: $(ref.aten-static-ip-address.selfLink)
+          serviceAccounts:
+              - email: cs561-assignment2-vishwas-sa@ds561-visb-assignment.iam.gserviceaccount.com
+          tags:
+              items:
+                  - http-server
+                  - https-server
+          metadata:
+              items:
+                  - key: google-logging-enabled
+                    value: "true"
+                  - key: files-bucket
+                    value: $(ref.ds561-storage-bucket-a10-visb.name)
+                  - key: startup-script
+                    value: |
+                        #! /bin/bash
+                        sudo apt update
+                        sudo apt -y upgrade
+                        sudo apt-get install python3-pip -y
+                        sudo apt-get install git -y
+                        sudo apt-get install python3-venv -y
+                        cd /home/vishwasb
+                        rm -r DS561-vishwas-assignments
+                        rm -r assignment4
+                        git clone https://github.com/vishwas21/DS561-vishwas-assignments.git
+                        cd DS561-vishwas-assignments
+                        pwd
+                        cp -r /home/vishwasb/DS561-vishwas-assignments/assignment4 /home/vishwasb
+                        cd /home/vishwasb/assignment4
+                        pip3 install -r requirements.txt
+                        python3 -m venv env
+                        source /home/vishwasb/assignment4/env/bin/activate
+                        pip3 install -r requirements.txt
+                        deactivate
+                        touch assignment4.service
+                        echo "[Unit]
+                        Description=Gunicorn instance to serve Assignment 4 app
+                        After=network.target
+
+                        [Service]
+                        User=vishwasb
+                        Group=www-data
+                        WorkingDirectory=/home/vishwasb/assignment4
+                        Environment="PATH=/home/vishwasb/assignment4/env/bin"
+                        ExecStart=python3 assignment4.py -d 0.0.0.0 -p 8080
+
+                        [Install]
+                        WantedBy=multi-user.target" > assignment4.service
+                        sudo chown root:root assignment4.service
+                        sudo cp assignment4.service /etc/systemd/system/assignment4.service
+                        sudo chown vishwasb:vishwasb /home/vishwasb/assignment4
+                        sudo systemctl stop assignment4
+                        sudo systemctl daemon-reload
+                        sudo systemctl start assignment4
+                        systemctl daemon-reload
+                        sudo systemctl restart assignment4
+                        sudo systemctl enable assignment4
+          dependsOn:
+              - ds561-storage-bucket-a10-visb
+              - service-account
+              - aten-static-ip-address
+
+    - name: allow-http
+      type: compute.v1.firewall
+      properties:
+          network: global/networks/default
+          sourceRanges: ["0.0.0.0/0"]
+          allowed:
+              - IPProtocol: TCP
+                ports: ["8080"]
+
+    - name: allow-https
+      type: compute.v1.firewall
+      properties:
+          network: global/networks/default
+          sourceRanges: ["0.0.0.0/0"]
+          allowed:
+              - IPProtocol: TCP
+                ports: ["443"]
+
+    # Pub/Sub resources
+    - name: ds561-assignment10-topic
+      type: pubsub.v1.topic
+      properties:
+          name: ds561-assignment10-topic
+          topic: ds561-assignment10-topic
+          project: ds561-visb-assignment
+
+    - name: ds561-assignment10-sub
+      type: pubsub.v1.subscription
+      properties:
+          name: ds561-assignment10-sub
+          topic: $(ref.ds561-assignment10-topic.name)
+          subscription: ds561-assignment10-sub
+          ackDeadlineSeconds: 60
+          project: ds561-visb-assignment
+
+    # Cloud SQL resources
+    - name: sql-instance
+      type: sqladmin.v1beta4.instance
+      properties:
+          region: us-central1
+          backendType: SECOND_GEN
+          databaseVersion: POSTGRES_13
+          instanceType: CLOUD_SQL_INSTANCE
+          settings:
+              tier: db-f1-micro
+              activationPolicy: ALWAYS
+              dataDiskSizeGb: 10
+              storageAutoResize: true
+              ipConfiguration:
+                  ipv4Enabled: true
+
+    - name: my-database-user
+      type: sqladmin.v1beta4.user
+      properties:
+          name: vishwasb
+          instance: $(ref.sql-instance.name)
+          host: "%"
+          password: abcd-10
+          dependsOn:
+              - sql-instance
+              - sql-database
+
+    # # Outputs
+    # - name: aten-static-ip
+    #   type: compute.v1.instance
+    #   properties:
+    #       zone: us-central1-a
+    #       name: aten-static-ip-address
+    #       outputProperties:
+    #           - networkInterfaces/accessConfigs/0/natIP
+
+    # - name: database-address
+    #   type: sqladmin.v1beta4.instance
+    #   properties:
+    #       region: us-central1
+    #       name: sql-database
+    #       outputProperties:
+    #           - ipAddresses/0
