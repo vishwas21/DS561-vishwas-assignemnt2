@@ -1,212 +1,255 @@
+#!/usr/bin/python3
+
+# Webserver dependencies
+from http.server import BaseHTTPRequestHandler, HTTPServer
+import argparse
+import time
+import google.cloud.storage as storage
+import google.cloud.pubsub as pubsub
+
+# Sql dependencies
 import os
-# os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "./googleCredentials.json"
+from google.cloud.sql.connector import Connector, IPTypes
+import pg8000
+import socket, struct
+import sqlalchemy
 
-from flask import Flask, request
-from dotenv import load_dotenv
-from datetime import datetime, timezone
+# python3 http_client.py -d 34.27.2.159 -p 8080 -b cs561-assignment2-storage-bucket/files  -i 10000 -n 1 -v -w none -r 5
 
-from google.cloud import storage as storage
-from google.cloud import pubsub_v1
-from google.cloud import secretmanager
-
-import sqlalchemy as sa
-import google.cloud.logging
-import os
-import json
-import ssl
-
-load_dotenv("./.env")
-
-os.environ["INSTANCE_CONNECTION_NAME"] = "ds561-visb-assignment:us-central1:ds561-psql-server"
+os.environ["INSTANCE_CONNECTION_NAME"] = "ds561-visb-assignment:us-central1:sql-instance"
 os.environ["DB_USER"] = "postgres"
 os.environ["DB_NAME"] = "ds561-db"
+os.environ["DB_PASS"] = "assignmentds561password"
 
-# def create_app(test_config=None):
-#     # create and configure the app
-app = Flask(__name__)
-
-pool = ""
-
-def getSecretFromSecretManager(secret_id, version_id):
-    secretClient = secretmanager.SecretManagerServiceClient()
-    name = f"projects/776935284294/secrets/{secret_id}/versions/{version_id}"
-    response = secretClient.access_secret_version(name=name)
-    return response.payload.data.decode('UTF-8')
-
-def createFileFromSM(fileName, secret_id, version_id):
-    f = open (fileName, "w")
-    f.write(getSecretFromSecretManager(secret_id, version_id))
-    f.close()
-
-def insertRequestDetails(request):
-    isBanned = "false"
-    if(request.headers.get("X-country") in ["North Korea", "Iran", "Cuba", "Myanmar", "Iraq", "Libya", "Sudan", "Zimbabwe", "Syria"]):
-        isBanned= "true"
+class MySqlServer():
+    pool = None
     
-    timeOfRequest = datetime.now(timezone.utc)
-    requestedFile = "files/" + request.path.split("/")[-1]
+    def connect_with_connector(self) -> sqlalchemy.engine.base.Engine:
+        """
+        Initializes a connection pool for a Cloud SQL instance of MySQL.
+        
+        Uses the Cloud SQL Python Connector package.
+        """
+        # Note: Saving credentials in environment variables is convenient, but not
+        # secure - consider a more secure solution such as
+        # Cloud Secret Manager (https://cloud.google.com/secret-manager) to help
+        # keep secrets safe.
 
-    insertStmt = sa.text(f"""INSERT INTO request_details (country, client_ip, gender, age, income, is_banned, time_of_request, requested_file) VALUES('{request.headers.get("X-country")}', '{request.headers.get("X-client-ip")}', '{request.headers.get("X-gender")}', '{request.headers.get("X-age")}', '{request.headers.get("X-income")}', {isBanned}, '{timeOfRequest}', '{requestedFile}') RETURNING request_id;""")
+        instance_connection_name = os.environ["INSTANCE_CONNECTION_NAME"]  # e.g. 'project:region:instance'
+        db_user = os.environ["DB_USER"]  # e.g. 'my-db-user'
+        db_pass = os.environ["DB_PASS"]  # e.g. 'my-db-password'
+        db_name = os.environ["DB_NAME"]  # e.g. 'my-database'
 
-    res = ""
+        ip_type = IPTypes.PRIVATE if os.environ.get("DB_PRIVATE_IP") else IPTypes.PUBLIC
 
-    with pool.connect() as dbConn:
-        try : 
-            res = dbConn.execute(insertStmt)
-            dbConn.commit() 
+        connector = Connector(ip_type)
+
+        def getconn() -> pg8000.dbapi.Connection:
+            conn: pg8000.abapi.Connection = connector.connect(
+                instance_connection_name,
+                "pg8000",
+                user=db_user,
+                password=db_pass,
+                db=db_name,
+            )
+            return conn
+        
+        self.pool = sqlalchemy.create_engine(
+            "postgresql+pg8000://",
+            creator=getconn,
+            # ...
+        )
+        return self.pool
+
+    def create_table(self):
+        create_stmt = sqlalchemy.text(
+            """CREATE TABLE IF NOT EXISTS accesslogs (
+            country VARCHAR(64),
+            ip BIGINT,
+            gender SMALLINT,
+            age VARCHAR(16),
+            income VARCHAR(32),
+            timeofday TIMESTAMP);"""
+            )
+        with self.pool.connect() as db_conn:
+            db_conn.execute(create_stmt)
+            db_conn.commit()
+
+    def insert_db(self, contents):
+        insert_stmt = sqlalchemy.text(
+            f"""INSERT INTO accesslogs (country, ip, gender, age, income, timeofday) VALUES ('{contents["country"]}', {contents["ip"]}, {contents["gender"]}, '{contents["age"]}', '{contents["income"]}', '{contents["timeofday"]}');""",
+        )
+
+        with self.pool.connect() as db_conn:
+            db_conn.execute(insert_stmt)
+            db_conn.commit()
+
+    def retrieve_db(self):
+        query_stmt = sqlalchemy.text("SELECT * from accesslogs")
+        with self.pool.connect() as db_conn:
+            result = db_conn.execute(query_stmt).fetchall()
+            return result
+
+    def ip2long(self, ip):
+        packedIP = socket.inet_aton(ip)
+        return struct.unpack('!L', packedIP)[0]
+    
+    def long2ip(self, long):
+        return socket.inet_ntoa(struct.pack('!L', long))
+
+        
+class MyServer(BaseHTTPRequestHandler):
+    use_local_filesystem = True    
+    sqlserver = None
+    
+    def publish_pub_sub(self, message):
+        project_id = 'cloudcomputingcourse-380619'
+        topic_id = project_id + '-mytopic'
+        publisher = pubsub.PublisherClient()
+        topic_path = publisher.topic_path(project_id, topic_id)
+        data = message.encode('utf-8')
+        future = publisher.publish(topic_path, data)
+        future.result()
+    
+    def do_GET(self):
+        country = self.headers['X-Country']
+        if country in ['North Korea', 'Iran', 'Cuba', 'Myanmar', 'Iraq', 'Libya', 'Sudan', 'Zimbabwe', 'Syria']:
+            if not self.use_local_filesystem:
+                pass
+                #publish_pub_sub('Banned country ' + country)
+            else:
+                print('Banned country ', country)
+        ip = self.headers['X-Client-IP']
+        bucket = None
+        directory = None
+        filename = None
+        if self.use_local_filesystem:
+            filename = "." + self.path
+            self.send_local_response(filename)
+        else:
+            parts = self.path.split('/')
+            bucket = parts[0]
+            directory = parts[1]
+            filename = parts[2]    
+            self.send_gcs_response(bucket, directory, filename)
+
+    def writeintodb(self, receive_headers):
+        contents = {}
+        headernames = ['X-country', 'X-client-IP', 'X-gender', 'X-age', 'X-income', 'X-time']
+        fieldnames = ['country', 'ip', 'gender', 'age', 'income', 'timeofday']
+        for key,header in zip(fieldnames,headernames):
+            contents[key] = receive_headers[header]
+        # Fix the ip so it is a number instead of a string
+        contents['ip'] = self.sqlserver.ip2long(contents['ip'])
+        contents['gender'] = (0 if contents['gender'] == 'Male' else 1)
+        self.sqlserver.insert_db(contents)
+            
+            
+    def send_gcs_response(self, bucket, directory, filename):
+        receive_headers = self.headers
+        try:
+            storage_client = storage.Client()
+            bucket = storage_client.bucket(bucket)
+            blobname = directory + '/' + filename
+            blob = bucket.blob(blobname)
+            content = ''
+            with blob.open("r") as f:
+                self.send_response(200)
+                self.send_header("Content-type", "text/html")
+                self.end_headers()
+                self.wfile.write(bytes("<html><head><title>https://pythonbasics.org</title></head>", "utf-8"))
+                self.wfile.write(bytes("<p>Request: %s</p>" % self.path, "utf-8"))
+                self.wfile.write(bytes("<body>", "utf-8"))
+                self.wfile.write(bytes("<p>This is an example web server.</p>", "utf-8"))
+                for key in receive_headers:
+                    self.wfile.write(bytes("Got header ", "utf-8"))
+                    self.wfile.write(bytes('{}:{}\n'.format(key,receive_headers[key]), "utf-8"))
+                self.wfile.write(bytes("</body></html>", "utf-8"))
+                content = f.read()
+                self.wfile.write(bytes(content, "utf-8"))
+            # Write a log of the request into the database
+            self.writeintodb(receive_headers)
         except:
-            print("An exception occurred")
-    
-    return (res.fetchone()).request_id
-
-def insertErrorDetails(request_id, errorCode):
-    insertStmt = sa.text(f"""INSERT INTO error_details (request_id, error_code) VALUES({request_id}, {errorCode});""")
-
-    with pool.connect() as dbConn:
-        try: 
-            dbConn.execute(insertStmt)
-            dbConn.commit()
+            self.send_response(404)
+            self.send_header("Content-type", "text/html")
+            self.end_headers()
+            self.wfile.write(bytes("<html><head><title>https://pythonbasics.org</title></head>", "utf-8"))
+            self.wfile.write(bytes("<p>Request: %s</p>" % self.path, "utf-8"))
+            self.wfile.write(bytes("<body>", "utf-8"))
+            self.wfile.write(bytes("<p>File not found.</p>", "utf-8"))
+            self.wfile.write(bytes("</body></html>", "utf-8"))
+                
+            
+    def send_local_response(self, path):
+        receive_headers = self.headers
+        try:
+            with open(path, "r") as f:
+                self.send_response(200)
+                self.send_header("Content-type", "text/html")
+                self.end_headers()
+                self.wfile.write(bytes("<html><head><title>https://pythonbasics.org</title></head>", "utf-8"))
+                self.wfile.write(bytes("<p>Request: %s</p>" % self.path, "utf-8"))
+                self.wfile.write(bytes("<body>", "utf-8"))
+                self.wfile.write(bytes("<p>This is an example web server.</p>", "utf-8"))
+                for key in receive_headers:
+                    self.wfile.write(bytes("Got header ", "utf-8"))
+                    self.wfile.write(bytes('{}:{}\n'.format(key,receive_headers[key]), "utf-8"))
+                self.wfile.write(bytes("</body></html>", "utf-8"))
+                content = f.read()
+                self.wfile.write(bytes(content, "utf-8"))
         except:
-            print("An exception occurred")
-    return
+            self.send_response(404)
+            self.send_header("Content-type", "text/html")
+            self.end_headers()
+            self.wfile.write(bytes("<html><head><title>https://pythonbasics.org</title></head>", "utf-8"))
+            self.wfile.write(bytes("<p>Request: %s</p>" % self.path, "utf-8"))
+            self.wfile.write(bytes("<body>", "utf-8"))
+            self.wfile.write(bytes("<p>File not found.</p>", "utf-8"))
+            self.wfile.write(bytes("</body></html>", "utf-8"))
 
-# initialize Python Connector object
-def connectToDb():
-    global pool
+    def do_PUT(self):
+        self.send500error()
 
-    createFileFromSM("server-ca.pem", "dbserverca", "2")
-    createFileFromSM("client-cert.pem", "dbclientcert", "1")
-    createFileFromSM("client-key.pem", "dbclientkey", "1")
+    def do_POST(self):
+        self.send500error()
 
-    db_root_cert = "./server-ca.pem"  # e.g. '/path/to/my/server-ca.pem'
-    db_cert = "./client-cert.pem"  # e.g. '/path/to/my/client-cert.pem'
-    db_key = "./client-key.pem"  # e.g. '/path/to/my/client-key.pem'
+    def do_HEAD(self):
+        self.send500error()
 
-    connect_args = {}
+    def do_DELETE(self):
+        self.send500error()
 
-    ssl_context = ssl.SSLContext()
-    ssl_context.verify_mode = ssl.CERT_REQUIRED
-    ssl_context.load_verify_locations(db_root_cert)
-    ssl_context.load_cert_chain(db_cert, db_key)
-    connect_args["ssl_context"] = ssl_context
+    def send500error(self):
+        self.send_response(500)
+        self.end_headers()
+        self.wfile.write(bytes("Server method unavailable", "utf-8"))
+                    
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-d", "--domain", help="Domain to make requests to", type=str, default="localhost")
+    parser.add_argument("-p", "--port", help="Server Port", type=int, default=8080)
+    parser.add_argument("-l", "--local", help="Use local filesystem for data source", action="store_true")
+    args = parser.parse_args()
+    if not args.local:
+        MyServer.use_local_filesystem = False
 
-    pool = sa.create_engine(
-        sa.engine.url.URL.create(
-            drivername="postgresql+pg8000",
-            username="postgres",
-            password=getSecretFromSecretManager("dbpostgrespwd", "1"),
-            host="34.42.5.93",
-            port="5432",
-            database="ds561-db",
-        ),
-        connect_args=connect_args,
-    )
-
-connectToDb()
-
-# a simple page that says hello
-@app.route('/<fileName>', methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS", "PUT"])
-def getFileFromGcp(fileName):
-
-    request_id = insertRequestDetails(request)
-
-    # Check if the request is from a prohbitted country, if yes then send a 404 response and add a message to the publisher with the details
-    if(request.headers.get("X-country") in ["North Korea", "Iran", "Cuba", "Myanmar", "Iraq", "Libya", "Sudan", "Zimbabwe", "Syria"]):
-        # Push the message to a Pub/Sub Model topic
-        pubClient = connectToGooglePubSub()
-        payload = {"country" : str(request.headers.get("X-country")),
-                    "request": str(request.method),
-                    "args": str(request.args),
-                    "data": str(request.data),
-                    "message": "Request from an unauthorized country"}
-        pushMessagePubSub(pubClient, payload)
-        insertErrorDetails(request_id, 400)
-        return ("Permission Denied - Unauthorized Country", 400)
+    sqlserver= MySqlServer()
+    sqlserver.pool = sqlserver.connect_with_connector()
+    sqlserver.create_table()
+    MyServer.sqlserver = sqlserver
     
-    loggingClient = connectToCloudLogging()
-    import logging
+    webServer = HTTPServer((args.domain, args.port), MyServer)
+    print("Server started http://%s:%s:%s" % (args.domain, args.port,args.local))
 
-    currentLog = {
-        "httpRequest":{
-            "requestMethod": request.method
-        },
-        "severity": "",
-        "message": "",
-        "statusCode": 000
-    }
+    try:
+        webServer.serve_forever()
+    except KeyboardInterrupt:
+        pass
 
-    if request.method == "GET":
+    webServer.server_close()
+    print("Server stopped.")
+        
+if __name__ == "__main__":        
+    main()
 
-        # Connect to google storage if not already connected
-        storageClient = connectToGoogle()
-        storageBucket, filesInBucket = connectToStorageBucketAndRead(storageClient, "cs561-assignment2-storage-bucket")
-        fileName = "files/" + request.path.split("/")[-1]
 
-        # Get the file name and check if the file is present in the bucket
-        if(not checkFileIfExists(filesInBucket, fileName)):
-            currentLog["severity"] = "ERROR"
-            currentLog["message"] = "User tried to search for non existant file: " + fileName
-            currentLog["statusCode"] = 404
-            print(currentLog)
-            logging.warning(currentLog)
-            insertErrorDetails(request_id, 404)
-            return ("File Not Found", 404)
-
-        # If present, retreive the file, read it and return the contents of the file with a 200 code
-        currentLog["severity"] = "SUCCESS"
-        currentLog["message"] = "File Found and returned Successfully"
-        currentLog["statusCode"] = 200
-        logging.info(currentLog)
-        return(readFileFromStorage(storageBucket, fileName), 200)
-    else:
-        currentLog["severity"] = "INTERNAL SERVER ERROR"
-        currentLog["message"] = "Not Implemented method call : " + request.method
-        currentLog["statusCode"] = 501
-        logging.warning(currentLog)
-        insertErrorDetails(request_id, 501)
-        return ("Not Implemented yet", 501)
-    
-def connectToGoogle():
-    storageClient = storage.Client.create_anonymous_client()
-    return storageClient
-
-def connectToStorageBucketAndRead(storageClient, storageBucketName):
-    storageBucket = storageClient.bucket(storageBucketName)
-    filesInBucket = [blob.name for blob in storageBucket.list_blobs()]
-
-    return storageBucket, filesInBucket
-
-def checkFileIfExists(filesInBucket, fileName):
-    if(fileName in filesInBucket):
-        return True
-    return False
-
-def readFileFromStorage(storageBucket, blobName):
-    blob = storageBucket.blob(blobName)
-    fileContent = ""
-
-    with blob.open("r") as f:
-        fileContent = f.read()
-    
-    return fileContent
-
-def connectToCloudLogging():
-    loggingClient = google.cloud.logging.Client()
-    loggingClient.setup_logging()
-    return loggingClient
-
-def connectToGooglePubSub():
-    pubClient = pubsub_v1.PublisherClient() 
-    return pubClient
-    
-def pushMessagePubSub(pubClient, payload):
-    PUB_SUB_TOPIC = "ds561-assignment3"
-    PUB_SUB_PROJECT = "ds561-visb-assignment"
-
-    topicPath = pubClient.topic_path(PUB_SUB_PROJECT, PUB_SUB_TOPIC)        
-    jsonData = json.dumps(payload).encode("utf-8")           
-    future = pubClient.publish(topicPath, data=jsonData) 
-    return
-
-if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=8080)
